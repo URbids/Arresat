@@ -635,7 +635,7 @@ function Weave() {
               const p = PATTERNS[l.pattern];
               const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2, dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy) || 1;
               const off = Math.min(70, len * 0.17), cxp = mx - (dy / len) * off, cyp = my + (dx / len) * off;
-              return <path key={l._k} className="pattern-edge appear" d={"M" + s.x + "," + s.y + " Q" + cxp + "," + cyp + " " + t.x + "," + t.y} fill="none" stroke={p.color} strokeWidth={1.6} strokeOpacity={0.7 * dim} strokeDasharray={p.dash} strokeLinecap="round" />;
+              return <path key={l._k} className="pattern-edge appear" d={"M" + s.x + "," + s.y + " Q" + cxp + "," + cyp + " " + t.x + "," + t.y} fill="none" stroke={p.color} strokeWidth={1.6} strokeOpacity={0.7 * dim} strokeLinecap="round" />;
             })}
             {(() => {
               if (!discover) return null;
@@ -680,7 +680,7 @@ function Weave() {
             <svg width="26" height="10"><line x1="1" y1="5" x2="25" y2="5" stroke={STRUCT} strokeWidth="1.7" /></svg>is made of
           </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#aeb6c8", fontSize: 11.5 }}>
-            <svg width="26" height="11"><path d="M1,8 Q13,1 25,8" fill="none" stroke="#43d0e0" strokeWidth="1.7" strokeDasharray="4 3" strokeLinecap="round" /></svg>same pattern <span style={{ color: "#6b7387" }}>(color = type above)</span>
+            <svg width="26" height="11"><path d="M1,8 Q13,1 25,8" fill="none" stroke="#43d0e0" strokeWidth="1.7" strokeLinecap="round" /></svg>same pattern <span style={{ color: "#6b7387" }}>(color = type above)</span>
           </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#aeb6c8", fontSize: 11.5 }}>
             <svg width="30" height="13"><path d="M1,10 Q15,3 29,10" fill="none" stroke={HYPO} strokeWidth="1.8" strokeDasharray="2 4" strokeLinecap="round" /><circle cx="15" cy="5.5" r="4.2" fill="#1a1330" stroke={HYPO} strokeWidth="1" /><text x="15" y="8" textAnchor="middle" fontSize="7" fill={HYPO}>?</text></svg>proposed link
