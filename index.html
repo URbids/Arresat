@@ -7,7 +7,7 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500&display=swap');
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: #070b15; }
+  html, body { margin: 0; background: #070b15; overflow-x: hidden; overscroll-behavior: none; }
   #root { max-width: 1100px; margin: 0 auto; padding: 18px 16px 40px; font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
   @keyframes flow { to { stroke-dashoffset: -24; } }
   @keyframes pulse { 0%,100% { opacity:0; transform:scale(1);} 50% { opacity:.5; transform:scale(1.9);} }
@@ -343,7 +343,7 @@ function Weave() {
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
   }, [toSim, revealFrom, linkMode, linkFirst]);
 
-  const onBgDown = (e) => { const r = svgRef.current.getBoundingClientRect(); pan.current = { x0: e.clientX, y0: e.clientY, vx: view.x, vy: view.y, scale: W / r.width }; };
+  const onBgDown = (e) => { const r = svgRef.current.getBoundingClientRect(); pan.current = { x0: e.clientX, y0: e.clientY, vx: view.x, vy: view.y, scale: r.width ? W / r.width : 1 }; };
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => {
     const el = svgRef.current; if (!el) return;
@@ -643,7 +643,7 @@ function Weave() {
             <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
             <filter id="blob" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22" /></filter>
           </defs>
-          <g transform={"translate(" + view.x + "," + view.y + ") scale(" + view.k + ")"}>
+          <g transform={"translate(" + (Number.isFinite(view.x) ? view.x : 0) + "," + (Number.isFinite(view.y) ? view.y : 0) + ") scale(" + (Number.isFinite(view.k) && view.k > 0 ? view.k : 1) + ")"}>
             {territories.map((t) => (
               <g key={"terr" + t.tk}>
                 {t.d ? <path d={t.d} fill={TOPICS[t.tk].color} opacity={t.op} filter="url(#blob)" />
