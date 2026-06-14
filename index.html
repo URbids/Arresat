@@ -530,28 +530,46 @@ function Weave() {
         const because = f.fams.length ? "both run on " + f.fams.join(" and ") : (f.reasons[0] || "share hidden structure");
         const revealAll = () => setRevealed(new Set(nodes.map((n) => n.id)));
         return (
-          <div className="wv-rise" style={{ padding: "30px 22px 24px", textAlign: "center" }}>
-            <div className="wv-title" style={{ color: "#f0f3fa", fontSize: 38, fontWeight: 600, letterSpacing: ".06em" }}>{APP_NAME}</div>
-            <div style={{ color: "#aeb6c8", fontSize: 15.5, marginTop: 8 }}>A living map of how everything connects.</div>
-            <div style={{ color: "#7f8aa0", fontSize: 13.5, marginTop: 3 }}>Most maps show you what's known. This one shows you what isn't — yet.</div>
-            <div style={{ maxWidth: 480, margin: "24px auto 0", background: "#100a22", border: "1px solid #2a2147", borderRadius: 14, padding: "18px 20px" }}>
-              <div className="wv-title" style={{ color: HYPO, fontSize: 11.5, letterSpacing: ".18em", textTransform: "uppercase" }}>An open question</div>
-              <svg viewBox="0 0 340 96" width="100%" style={{ maxWidth: 340, marginTop: 8 }}>
-                <path className="pattern-edge" d="M86,48 Q170,18 254,48" fill="none" stroke={HYPO} strokeWidth="2.4" strokeDasharray="2 8" strokeLinecap="round" />
-                <circle cx="170" cy="29" r="10" fill="#1a1330" stroke={HYPO} strokeWidth="1.2" />
-                <text x="170" y="33" textAnchor="middle" fontSize="13" fill={HYPO} fontWeight="600">?</text>
-                <circle cx="86" cy="48" r="17" fill={ca} />
-                <circle cx="254" cy="48" r="17" fill={cb} />
-                <text x="86" y="84" textAnchor="middle" fontSize="12.5" fill="#dbe1ee">{fa.label}</text>
-                <text x="254" y="84" textAnchor="middle" fontSize="12.5" fill="#dbe1ee">{fb.label}</text>
-              </svg>
-              <div style={{ color: "#c4ccdb", fontSize: 14, lineHeight: 1.5, marginTop: 10 }}>{fa.label} and {fb.label} {because}, yet nothing connects them. Is there a real link?</div>
-              <button onClick={() => setFeaturedIdx((i) => (i + 1) % Math.min(8, CANDIDATES.length))} style={{ marginTop: 12, background: "transparent", border: "none", color: HYPO, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>next question ›</button>
+          <div className="wv-rise" style={{ padding: "40px 22px 32px", maxWidth: 600, margin: "0 auto", textAlign: "center" }}>
+            <div className="wv-title" style={{ color: HYPO, fontSize: 11.5, letterSpacing: ".26em", textTransform: "uppercase" }}>Welcome to</div>
+            <div className="wv-title" style={{ color: "#f0f3fa", fontSize: 40, fontWeight: 600, letterSpacing: ".06em", marginTop: 5 }}>{APP_NAME}</div>
+            <div style={{ color: "#aeb6c8", fontSize: 15.5, marginTop: 11, lineHeight: 1.5 }}>A living map of how everything connects — across physics, chemistry, life, mind, and society.</div>
+            <div style={{ color: "#7f8aa0", fontSize: 13.5, marginTop: 5, lineHeight: 1.5, maxWidth: 470, marginLeft: "auto", marginRight: "auto" }}>Most maps show you what's known. Arresat also surfaces the gaps — connections nobody has drawn yet — and helps you test whether they're real.</div>
+
+            <div style={{ maxWidth: 470, margin: "26px auto 0", textAlign: "left", background: "#0d0a1e", border: "1px solid #241c40", borderRadius: 14, padding: "18px 20px" }}>
+              <div className="wv-title" style={{ color: "#8a93a6", fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", marginBottom: 15 }}>How it works</div>
+
+              <div style={{ display: "flex", gap: 13, alignItems: "flex-start", marginBottom: 14 }}>
+                <svg width="30" height="22" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="11" cy="11" r="6" fill="#7fcf9e" /><circle cx="11" cy="11" r="9.5" fill="none" stroke="#7fcf9e" strokeOpacity="0.35" strokeWidth="1.5" /></svg>
+                <div style={{ color: "#c4ccdb", fontSize: 13.5, lineHeight: 1.45 }}><b style={{ color: "#e8ecf4", fontWeight: 600 }}>Grow the map.</b> Click any glowing node to reveal what it connects to. Start from a few building blocks and expand outward.</div>
+              </div>
+
+              <div style={{ display: "flex", gap: 13, alignItems: "flex-start", marginBottom: 14 }}>
+                <svg width="30" height="22" style={{ flexShrink: 0, marginTop: 6 }}><line x1="2" y1="6" x2="28" y2="6" stroke={STRUCT} strokeWidth="2" /></svg>
+                <div style={{ color: "#c4ccdb", fontSize: 13.5, lineHeight: 1.45 }}><b style={{ color: "#e8ecf4", fontWeight: 600 }}>Solid gray lines</b> mean one thing is made of another — structure (matter is made of quantum fields).</div>
+              </div>
+
+              <div style={{ display: "flex", gap: 13, alignItems: "flex-start", marginBottom: 14 }}>
+                <svg width="30" height="22" style={{ flexShrink: 0, marginTop: 4 }}><path d="M2,14 Q15,2 28,14" fill="none" stroke="#43d0e0" strokeWidth="2" strokeLinecap="round" /></svg>
+                <div style={{ color: "#c4ccdb", fontSize: 13.5, lineHeight: 1.45 }}><b style={{ color: "#e8ecf4", fontWeight: 600 }}>Colored curves</b> mean two things share the same pattern across different fields — a feedback loop, a cycle, a flow.</div>
+              </div>
+
+              <div style={{ display: "flex", gap: 13, alignItems: "flex-start", marginBottom: 14 }}>
+                <svg width="30" height="22" style={{ flexShrink: 0, marginTop: 2 }}><path d="M2,17 Q15,6 28,17" fill="none" stroke={HYPO} strokeWidth="2" strokeDasharray="2 4" strokeLinecap="round" /><circle cx="15" cy="9" r="6.2" fill="#1a1330" stroke={HYPO} strokeWidth="1.2" /><text x="15" y="12.4" textAnchor="middle" fontSize="9" fill={HYPO} fontWeight="600">?</text></svg>
+                <div style={{ color: "#c4ccdb", fontSize: 13.5, lineHeight: 1.45 }}><b style={{ color: "#e8ecf4", fontWeight: 600 }}>Violet "?" links</b> are proposed connections nobody has drawn yet. Finding these is what Arresat is for.</div>
+              </div>
+
+              <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+                <svg width="30" height="22" style={{ flexShrink: 0, marginTop: 0 }}><text x="7" y="17" fontSize="16" fill={HYPO}>✦</text></svg>
+                <div style={{ color: "#c4ccdb", fontSize: 13.5, lineHeight: 1.45 }}><b style={{ color: "#e8ecf4", fontWeight: 600 }}>Go deeper.</b> <b style={{ color: "#cdd4e2", fontWeight: 500 }}>discover</b> surfaces candidate links · <b style={{ color: "#cdd4e2", fontWeight: 500 }}>analyze</b> asks AI for testable hypotheses (proposals, not conclusions) · <b style={{ color: "#cdd4e2", fontWeight: 500 }}>✦ grow</b> suggests new concepts.</div>
+              </div>
             </div>
-            <div className="row" style={{ justifyContent: "center", marginTop: 18 }}>
-              <button onClick={() => { revealAll(); setDiscover(true); setPinned(new Set([f.a + "|" + f.b])); setSelected(f.a); setHoverCand(f); setIntro(false); }} style={{ background: HYPO, color: "#1a1030", border: "none", borderRadius: 999, padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Explore this question</button>
-              <button onClick={() => { revealAll(); setDiscover(true); setIntro(false); setTimeout(fitView, 900); }} style={{ background: "transparent", color: "#cdd4e2", border: "1px solid #2a3445", borderRadius: 999, padding: "7px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>See all open questions</button>
-              <button onClick={() => setIntro(false)} style={{ background: "transparent", color: "#8a93a6", border: "1px solid #2a3445", borderRadius: 999, padding: "7px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Just explore the map</button>
+
+            <div style={{ color: "#6b7387", fontSize: 12, marginTop: 15 }}>drag to move · scroll to zoom · sign in to save your map</div>
+
+            <div className="row" style={{ justifyContent: "center", marginTop: 20 }}>
+              <button onClick={() => setIntro(false)} style={{ background: HYPO, color: "#1a1030", border: "none", borderRadius: 999, padding: "9px 22px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Start exploring</button>
+              <button onClick={() => { revealAll(); setDiscover(true); setPinned(new Set([f.a + "|" + f.b])); setSelected(f.a); setHoverCand(f); setIntro(false); }} style={{ background: "transparent", color: "#cdd4e2", border: "1px solid #2a3445", borderRadius: 999, padding: "9px 22px", fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}>Show me an open question</button>
             </div>
           </div>
         );
