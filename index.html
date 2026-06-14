@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Consilience — a map of how everything connects</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500&display=swap');
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #070b15; }
+  #root { max-width: 1100px; margin: 0 auto; padding: 18px 16px 40px; font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+  @keyframes flow { to { stroke-dashoffset: -24; } }
+  @keyframes pulse { 0%,100% { opacity:0; transform:scale(1);} 50% { opacity:.5; transform:scale(1.9);} }
+  @keyframes appear { from { opacity:0; } to { opacity:1; } }
+  @keyframes rise { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:translateY(0);} }
+  .pattern-edge { animation: flow 1.1s linear infinite; }
+  .appear { animation: appear .5s ease both; }
+  @media (prefers-reduced-motion: reduce){ .pattern-edge,.frontier,.appear,.wv-rise{ animation:none !important; } }
+  .frontier { transform-box: fill-box; transform-origin:center; animation: pulse 2.2s ease-in-out infinite; }
+  .node-hit { cursor:pointer; }
+  .wv-title { font-family:'Space Grotesk', ui-sans-serif, sans-serif; }
+  .wv-rise { animation: rise .6s cubic-bezier(.2,.7,.2,1) both; }
+  .row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .wv-input, .wv-select { background:#0d1426; border:1px solid #2a3445; border-radius:8px; color:#e8ecf5; font-size:12.5px; padding:5px 9px; outline:none; font-family:inherit; }
+  .wv-input:focus, .wv-select:focus { border-color:#3f5878; }
+  .wv-input::placeholder { color:#5b6479; }
+  .btn { font-size:12.5px; border:1px solid #2a3445; border-radius:8px; padding:4px 10px; background:transparent; color:#aeb6c8; cursor:pointer; font-family:inherit; }
+  .btn:hover { border-color:#3f5878; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useRef, useEffect, useCallback, useMemo } = React;
+
+const TOPICS = {
+  quantum:   { label: "Physics",   color: "#7b74ff", rank: 1 },
+  chemistry: { label: "Chemistry", color: "#2fbfa8", rank: 3 },
+  cosmos:    { label: "Cosmos",    color: "#4f9be8", rank: 4 },
+  earth:     { label: "Earth",     color: "#b8893f", rank: 4 },
+  life:      { label: "Life",      color: "#5fc95a", rank: 5 },
+  mind:      { label: "Mind",      color: "#a974f0", rank: 5.7 },
+  society:   { label: "Society",   color: "#e85f9c", rank: 6.4 },
+};
+const PATTERNS = {
+  feedback:  { color: "#f2a93b", dash: "7 6",      on: true,  label: "feedback",  note: "Sense, compare, correct — the loop that holds a thing steady." },
+  cycle:     { color: "#ff6b9d", dash: "1 7",      on: true,  label: "cycle",     note: "What goes around: matter and energy returning to where they started." },
+  flow:      { color: "#43d0e0", dash: "11 5 2 5", on: true,  label: "flow",      note: "A network moving energy, nutrients or information to where it's needed." },
+  selection: { color: "#ff6a5a", dash: "9 5",      on: false, label: "selection", note: "Variants compete; the fitter ones persist. Evolution's logic, everywhere." },
+  threshold: { color: "#dfe6ff", dash: "3 6",      on: false, label: "threshold", note: "Push a system past a tipping point and it flips to a new state." },
+};
+const APP_NAME = "Consilience";
+const STORE_KEY = "consilience-graph-v1";
+const STRUCT = "#3f5878";
+const HYPO = "#e9c2ff";
+// Inside Claude this endpoint is auto-authed (no key needed). On your own deploy,
+// point it at a small serverless proxy that adds your Anthropic API key.
+const ANALYZE_ENDPOINT = "https://api.anthropic.com/v1/messages";
+
+const N = (id, label, topic, rank, r, note) => ({ id, label, topic, rank, r, note });
+const BASE_NODES = [
+  N("quantum_fields","Quantum fields","quantum",0,14,"The deepest layer of reality; everything else is a ripple in these fields."),
+  N("spacetime","Spacetime","quantum",0.5,12,"The fabric of where and when, bent by mass and energy."),
+  N("energy","Energy","quantum",0.6,13,"The capacity to cause change — never created or destroyed, only moved."),
+  N("causality","Causality","quantum",0.8,11,"Cause and effect — the rule that lets one event determine the next."),
+  N("forces","Forces","quantum",0.9,12,"The fundamental interactions that bind, push and pull everything."),
+  N("entropy","Entropy","quantum",1.3,12,"The relentless drift toward disorder — and the arrow of time itself."),
+  N("light","Light","cosmos",1.0,12,"Electromagnetic radiation: how energy and information cross space."),
+  N("gravity","Gravity","cosmos",1.2,12,"The curvature of spacetime; architect of stars, planets and galaxies."),
+  N("matter","Matter","chemistry",1.4,13,"Anything with mass — the stuff that objects are built from."),
+  N("information","Information","mind",1.5,12,"Distinctions that can be stored, copied and acted upon — the seed of computation and mind."),
+];
+const S = (a, b) => ({ source: a, target: b, type: "structure" });
+const P = (a, b, f) => ({ source: a, target: b, type: "pattern", pattern: f });
+const BASE_LINKS = [
+  S("quantum_fields","forces"),
+  S("quantum_fields","matter"),
+  S("energy","matter"),
+  S("energy","light"),
+  S("forces","gravity"),
+  S("spacetime","gravity"),
+  S("spacetime","causality"),
+  P("energy","entropy","flow"),
+  P("information","entropy","flow"),
+  P("information","light","flow"),
+  P("causality","entropy","threshold"),
+];
+const BASE = { nodes: BASE_NODES, links: BASE_LINKS };
+const RMIN = Math.min(...BASE_NODES.map(n => n.rank));
+const RMAX = Math.max(...BASE_NODES.map(n => n.rank));
+const W = 1040, H = 720;
+const yTarget = (rank) => H - 60 - ((rank - RMIN) / (RMAX - RMIN)) * (H - 130);
+
+function computeCandidates(nodes, links, byId) {
+  const key = (a, b) => [a, b].sort().join("|");
+  const connected = new Set();
+  const full = {}; nodes.forEach((n) => (full[n.id] = new Set()));
+  const parts = {}; Object.keys(PATTERNS).forEach((f) => (parts[f] = new Set()));
+  links.forEach((l) => {
+    if (!full[l.source] || !full[l.target]) return;
+    full[l.source].add(l.target); full[l.target].add(l.source);
+    connected.add(key(l.source, l.target));
+    if (l.type === "pattern") { parts[l.pattern].add(l.source); parts[l.pattern].add(l.target); }
+  });
+  const deg = (id) => full[id].size;
+  const cand = {};
+  const bump = (u, v, score, fam, reason) => {
+    const k = key(u, v); const [a, b] = k.split("|");
+    if (!cand[k]) cand[k] = { a, b, score: 0, fams: new Set(), reasons: new Set() };
+    cand[k].score += score; if (fam) cand[k].fams.add(fam); cand[k].reasons.add(reason);
+  };
+  Object.keys(PATTERNS).forEach((f) => {
+    const Pn = [...parts[f]];
+    for (let i = 0; i < Pn.length; i++) for (let j = i + 1; j < Pn.length; j++) {
+      const u = Pn[i], v = Pn[j];
+      if (!byId[u] || !byId[v] || byId[u].topic === byId[v].topic) continue;
+      if (connected.has(key(u, v))) continue;
+      bump(u, v, 3 + Math.abs(byId[u].rank - byId[v].rank) * 0.5, f, "both run on " + f);
+    }
+  });
+  const ids = nodes.map((n) => n.id);
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    const u = ids[i], v = ids[j];
+    if (connected.has(key(u, v))) continue;
+    const cn = [...full[u]].filter((w) => full[v].has(w));
+    if (cn.length < 2) continue;
+    const aa = cn.reduce((s, w) => s + 1 / Math.log(deg(w) + 1), 0);
+    const cross = byId[u].topic !== byId[v].topic;
+    bump(u, v, aa * (cross ? 2.2 : 0.6) + (cross ? 1.5 : 0), null, "share " + cn.length + " links (" + cn.map((w) => byId[w].label).join(", ") + ")");
+  }
+  return Object.values(cand).map((c) => ({ ...c, fams: [...c.fams], reasons: [...c.reasons] })).sort((a, b) => b.score - a.score).slice(0, 16);
+}
+
+function loadGraph() {
+  try { const s = localStorage.getItem(STORE_KEY); if (s) { const g = JSON.parse(s); if (g && g.nodes && g.links) return g; } } catch (e) {}
+  return null;
+}
+function saveGraph(g) { try { localStorage.setItem(STORE_KEY, JSON.stringify(g)); } catch (e) {} }
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "node";
+
+function Weave() {
+  const SEED = "quantum_fields";
+  const [graph, setGraph] = useState(() => loadGraph() || BASE);
+  const nodes = graph.nodes, links = graph.links;
+  const NODE_BY_ID = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
+  const adjacency = useMemo(() => {
+    const m = {}; nodes.forEach((n) => (m[n.id] = new Set()));
+    links.forEach((l) => { if (m[l.source] && m[l.target]) { m[l.source].add(l.target); m[l.target].add(l.source); } });
+    return m;
+  }, [nodes, links]);
+  const CANDIDATES = useMemo(() => computeCandidates(nodes, links, NODE_BY_ID), [nodes, links, NODE_BY_ID]);
+  useEffect(() => { saveGraph(graph); }, [graph]);
+
+  const [revealed, setRevealed] = useState(() => new Set([SEED]));
+  const [selected, setSelected] = useState(SEED);
+  const [, setTick] = useState(0);
+  const [view, setView] = useState({ x: 0, y: 0, k: 1 });
+  const [show, setShow] = useState({ structure: true, ...Object.fromEntries(Object.entries(PATTERNS).map(([k, p]) => [k, p.on])) });
+  const [isoTopic, setIsoTopic] = useState(null);
+  const [focus, setFocus] = useState(false);
+  const [query, setQuery] = useState("");
+  const [discover, setDiscover] = useState(false);
+  const [hoverCand, setHoverCand] = useState(null);
+  const [pinned, setPinned] = useState(() => new Set());
+  const [intro, setIntro] = useState(true);
+  const [featuredIdx, setFeaturedIdx] = useState(0);
+  const [edit, setEdit] = useState(false);
+  const [linkMode, setLinkMode] = useState(false);
+  const [pendingLink, setPendingLink] = useState(null);
+  const [linkFirst, setLinkFirst] = useState(null);
+  const [newLabel, setNewLabel] = useState("");
+  const [newTopic, setNewTopic] = useState("life");
+  const [newRel, setNewRel] = useState("structure");
+  const [analyzing, setAnalyzing] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisErr, setAnalysisErr] = useState(null);
+  const [growing, setGrowing] = useState(false);
+  const [growList, setGrowList] = useState(null);
+
+  const svgRef = useRef(null), simRef = useRef(null), nodesRef = useRef([]), linksRef = useRef([]), drag = useRef(null), pan = useRef(null);
+
+  useEffect(() => {
+    const sim = d3.forceSimulation([])
+      .force("link", d3.forceLink([]).id((d) => d.id).distance((l) => (l.type === "pattern" ? 220 : 92)).strength((l) => (l.type === "pattern" ? 0.06 : 0.65)))
+      .force("charge", d3.forceManyBody().strength(-300))
+      .force("collide", d3.forceCollide().radius((d) => d.r + 22))
+      .force("x", d3.forceX(W / 2).strength(0.045))
+      .force("y", d3.forceY((d) => yTarget(d.rank)).strength(0.12))
+      .on("tick", () => setTick((t) => t + 1));
+    simRef.current = sim;
+    return () => sim.stop();
+  }, []);
+
+  const revealedKey = [...revealed].sort().join(",");
+  const graphKey = nodes.length + ":" + links.length;
+  useEffect(() => {
+    const sim = simRef.current; if (!sim) return;
+    const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
+    const active = nodes.filter((n) => revealed.has(n.id)).map((n) => {
+      const ex = byId.get(n.id); if (ex) { ex.r = n.r; ex.rank = n.rank; ex.topic = n.topic; ex.label = n.label; ex.note = n.note; return ex; }
+      const anchorId = [...(adjacency[n.id] || [])].find((id) => byId.has(id));
+      const a = anchorId ? byId.get(anchorId) : { x: W / 2, y: H / 2 };
+      return { ...n, x: a.x + (Math.random() - 0.5) * 80, y: a.y + (Math.random() - 0.5) * 80 };
+    });
+    nodesRef.current = active;
+    const present = new Set(active.map((n) => n.id));
+    const activeLinks = links.filter((l) => present.has(l.source) && present.has(l.target)).map((l) => ({ ...l, _k: l.source + "|" + l.target + "|" + l.type + "|" + (l.pattern || "") }));
+    linksRef.current = activeLinks;
+    sim.nodes(active);
+    sim.force("link").links(activeLinks);
+    sim.alpha(0.9).restart();
+  }, [revealedKey, graphKey]); // eslint-disable-line
+
+  const revealFrom = useCallback((id) => { setRevealed((prev) => { const next = new Set(prev); (adjacency[id] || []).forEach((nb) => next.add(nb)); next.add(id); return next; }); }, [adjacency]);
+
+  const toSim = useCallback((cx, cy) => {
+    const svg = svgRef.current; const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+    const vb = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: (vb.x - view.x) / view.k, y: (vb.y - view.y) / view.k };
+  }, [view]);
+
+  const onNodeDown = (e, id) => {
+    e.stopPropagation();
+    const p = toSim(e.clientX, e.clientY);
+    const node = nodesRef.current.find((n) => n.id === id);
+    drag.current = { id, moved: false, ox: p.x - node.x, oy: p.y - node.y };
+    simRef.current.alphaTarget(0.25).restart();
+  };
+
+  const pickLink = (id) => {
+    if (!linkFirst) { setLinkFirst(id); setSelected(id); return; }
+    if (id === linkFirst) { setLinkFirst(null); return; }
+    setPendingLink({ a: linkFirst, b: id }); setLinkFirst(null);
+  };
+
+  useEffect(() => {
+    const move = (e) => {
+      if (drag.current) {
+        const p = toSim(e.clientX, e.clientY);
+        const node = nodesRef.current.find((n) => n.id === drag.current.id); if (!node) return;
+        drag.current.moved = true; node.fx = p.x - drag.current.ox; node.fy = p.y - drag.current.oy;
+      } else if (pan.current) {
+        const dx = e.clientX - pan.current.x0, dy = e.clientY - pan.current.y0;
+        setView((v) => ({ ...v, x: pan.current.vx + dx * pan.current.scale, y: pan.current.vy + dy * pan.current.scale }));
+      }
+    };
+    const up = () => {
+      if (drag.current) {
+        const d = drag.current;
+        if (!d.moved) { if (linkMode) pickLink(d.id); else { setSelected(d.id); revealFrom(d.id); } }
+        drag.current = null; simRef.current.alphaTarget(0);
+      }
+      pan.current = null;
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  }, [toSim, revealFrom, linkMode, linkFirst]);
+
+  const onBgDown = (e) => { const r = svgRef.current.getBoundingClientRect(); pan.current = { x0: e.clientX, y0: e.clientY, vx: view.x, vy: view.y, scale: W / r.width }; };
+  const onWheel = (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const p = toSim(e.clientX, e.clientY);
+    setView((v) => { const k = Math.max(0.3, Math.min(3.5, v.k * factor)); return { k, x: v.x - p.x * (k - v.k), y: v.y - p.y * (k - v.k) }; });
+  };
+  const fitView = useCallback(() => {
+    const ns = nodesRef.current.filter((n) => n.x != null); if (!ns.length) return;
+    const xs = ns.map((n) => n.x), ys = ns.map((n) => n.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const bw = (maxX - minX) + 140, bh = (maxY - minY) + 140;
+    const k = Math.max(0.3, Math.min(1.6, Math.min(W / bw, H / bh)));
+    setView({ k, x: W / 2 - (k * (minX + maxX)) / 2, y: H / 2 - (k * (minY + maxY)) / 2 });
+  }, []);
+
+  // editing
+  const candKey = (c) => c.a + "|" + c.b;
+  const togglePin = (c) => setPinned((p) => { const n = new Set(p); const k = candKey(c); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const addLink = (a, b, rel, note) => {
+    const link = rel === "structure" ? { source: a, target: b, type: "structure", user: true, note } : { source: a, target: b, type: "pattern", pattern: rel, user: true, note };
+    setGraph((g) => ({ nodes: g.nodes, links: [...g.links, link] }));
+    setRevealed((prev) => { const n = new Set(prev); n.add(a); n.add(b); return n; });
+  };
+  const acceptCandidate = (c) => { addLink(c.a, c.b, c.fams[0] || "structure"); setPinned((p) => { const n = new Set(p); n.delete(candKey(c)); return n; }); setHoverCand(null); };
+
+  const analyze = async (c) => {
+    const k = candKey(c); setAnalyzing(k); setAnalysis(null); setAnalysisErr(null);
+    const a = NODE_BY_ID[c.a], b = NODE_BY_ID[c.b];
+    const prompt = "You are an interdisciplinary scientist judging whether a connection between two concepts is a NEW idea or already known.\n\n" +
+      "Concept A: " + a.label + " (" + TOPICS[a.topic].label + "). " + a.note + "\n" +
+      "Concept B: " + b.label + " (" + TOPICS[b.topic].label + "). " + b.note + "\n" +
+      "Flagged because: " + c.reasons.join("; ") + ".\n\n" +
+      "First, use web search to check whether these two have already been connected in existing research or writing. Then propose 2-3 concrete ways they might connect. For each include: hypothesis (one line), mechanism (why it might hold), plausibility (established | plausible | speculative), novelty (known = already documented | emerging = some prior discussion | novel = little or no prior connection found), and test (how to check). Add a one-sentence overall summary of what the search suggests about novelty. Be candid; never label something novel if it is actually well known. Keep it concise.\n\n" +
+      "Respond with ONLY JSON as your final output, no markdown fences: {\"summary\":\"...\",\"links\":[{\"hypothesis\":\"...\",\"mechanism\":\"...\",\"plausibility\":\"...\",\"novelty\":\"...\",\"test\":\"...\"}]}";
+    try {
+      const res = await fetch(ANALYZE_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }], tools: [{ type: "web_search_20250305", name: "web_search" }] }) });
+      const data = await res.json();
+      let text = (data.content || []).filter((x) => x.type === "text").map((x) => x.text).join("\n");
+      const st = text.indexOf("{"), en = text.lastIndexOf("}");
+      if (st >= 0 && en > st) text = text.slice(st, en + 1);
+      const parsed = JSON.parse(text);
+      setAnalysis({ key: k, summary: parsed.summary || "", links: parsed.links || [] });
+    } catch (err) {
+      setAnalysisErr("Couldn't reach the analysis model from here. Inside Claude this runs automatically; on your own deployment, point ANALYZE_ENDPOINT at a serverless proxy that holds your API key.");
+    }
+    setAnalyzing(null);
+  };
+
+  const growFrom = async (id) => {
+    const node = NODE_BY_ID[id]; if (!node) return;
+    setGrowing(true); setGrowList(null);
+    const nbLabels = [...(adjacency[id] || [])].map((x) => NODE_BY_ID[x] && NODE_BY_ID[x].label).filter(Boolean);
+    const prompt = "Expand a concept map of reality around one node.\n\n" +
+      "Node: " + node.label + " (field: " + TOPICS[node.topic].label + "). " + node.note + "\n" +
+      "Already connected to: " + (nbLabels.join(", ") || "nothing yet") + "\n" +
+      "Available fields (use these keys): " + Object.keys(TOPICS).join(", ") + "\n\n" +
+      "Propose 4-6 important related concepts NOT already listed above. For each give: label (1-3 words), topic (one field key), note (one concise sentence), relation to " + node.label + " (one of: structure, feedback, cycle, flow, selection, threshold — use 'structure' for is-made-of or gives-rise-to), and optionally connectTo (the label of an existing or proposed concept it should link to instead of " + node.label + ").\n\n" +
+      "Respond with ONLY JSON, no markdown: {\"concepts\":[{\"label\":\"...\",\"topic\":\"...\",\"note\":\"...\",\"relation\":\"...\",\"connectTo\":\"\"}]}";
+    try {
+      const res = await fetch(ANALYZE_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
+      const data = await res.json();
+      let text = (data.content || []).filter((x) => x.type === "text").map((x) => x.text).join("\n");
+      const st = text.indexOf("{"), en = text.lastIndexOf("}"); if (st >= 0 && en > st) text = text.slice(st, en + 1);
+      const parsed = JSON.parse(text);
+      setGrowList({ seed: id, items: (parsed.concepts || []).map((x) => ({ ...x, _add: true })) });
+    } catch (err) { setGrowList({ seed: id, error: true }); }
+    setGrowing(false);
+  };
+  const toggleGrowItem = (i) => setGrowList((g) => ({ ...g, items: g.items.map((x, j) => (j === i ? { ...x, _add: !x._add } : x)) }));
+  const applyGrowth = () => {
+    if (!growList || !growList.items) return;
+    const seed = growList.seed;
+    const labelToId = {}; nodes.forEach((n) => (labelToId[n.label.toLowerCase()] = n.id));
+    const picked = growList.items.filter((it) => it._add && it.label);
+    const newNodes = [];
+    picked.forEach((it) => {
+      const topic = TOPICS[it.topic] ? it.topic : NODE_BY_ID[seed].topic;
+      let nid = slug(it.label); if (NODE_BY_ID[nid] || newNodes.find((n) => n.id === nid)) nid = nid + "_" + Math.random().toString(36).slice(2, 5);
+      newNodes.push(N(nid, it.label, topic, TOPICS[topic].rank, 11, it.note || "Added by expansion."));
+      labelToId[it.label.toLowerCase()] = nid;
+    });
+    const newLinks = [];
+    picked.forEach((it) => {
+      const nid = labelToId[it.label.toLowerCase()];
+      let target = seed;
+      if (it.connectTo) { const t = labelToId[String(it.connectTo).toLowerCase()]; if (t && t !== nid) target = t; }
+      const rel = (it.relation === "structure" || PATTERNS[it.relation]) ? it.relation : "structure";
+      newLinks.push(rel === "structure" ? { source: target, target: nid, type: "structure", user: true } : { source: target, target: nid, type: "pattern", pattern: rel, user: true });
+    });
+    setGraph((g) => ({ nodes: [...g.nodes, ...newNodes], links: [...g.links, ...newLinks] }));
+    setRevealed((prev) => { const n = new Set(prev); n.add(seed); newNodes.forEach((nd) => n.add(nd.id)); return n; });
+    setGrowList(null);
+  };
+  const addNode = () => {
+    const label = newLabel.trim(); if (!label) return;
+    let id = slug(label); if (NODE_BY_ID[id]) id = id + "_" + Math.random().toString(36).slice(2, 6);
+    const node = N(id, label, newTopic, TOPICS[newTopic].rank, 11, "Added by you.");
+    setGraph((g) => ({ nodes: [...g.nodes, node], links: g.links }));
+    setRevealed((prev) => { const n = new Set(prev); n.add(id); return n; });
+    setSelected(id); setNewLabel("");
+  };
+  const removeLink = (lk) => setGraph((g) => ({ nodes: g.nodes, links: g.links.filter((l) => !(l.source === lk.source && l.target === lk.target && l.type === lk.type && (l.pattern || "") === (lk.pattern || ""))) }));
+  const resetMap = () => { try { localStorage.removeItem(STORE_KEY); } catch (e) {} setGraph(BASE); setRevealed(new Set([SEED])); setSelected(SEED); setView({ x: 0, y: 0, k: 1 }); setPinned(new Set()); };
+
+  const q = query.trim().toLowerCase();
+  const matches = (n) => q && n.label.toLowerCase().includes(q);
+  const isFrontier = (id) => [...(adjacency[id] || [])].some((nb) => !revealed.has(nb));
+  const focusSet = focus && selected ? new Set([selected, ...(adjacency[selected] || [])]) : null;
+  const hoverSet = discover && hoverCand ? new Set([hoverCand.a, hoverCand.b]) : null;
+  const emph = hoverSet || focusSet;
+
+  const nodeAlpha = (n) => {
+    if (q) return matches(n) ? 1 : 0.12;
+    if (emph) return emph.has(n.id) ? 1 : 0.1;
+    if (isoTopic && n.topic !== isoTopic) return 0.16;
+    return 1;
+  };
+  const showLabel = (n) => view.k > 0.75 || n.r >= 13 || n.id === selected || (emph && emph.has(n.id)) || matches(n) || n.id === linkFirst;
+
+  const territories = Object.keys(TOPICS).map((tk) => {
+    const pts = nodesRef.current.filter((n) => n.topic === tk && n.x != null).map((n) => [n.x, n.y]);
+    if (!pts.length) return null;
+    const cx = d3.mean(pts, (p) => p[0]), cy = d3.mean(pts, (p) => p[1]);
+    let d = null, circle = null;
+    if (pts.length >= 3) {
+      const hull = d3.polygonHull(pts);
+      if (hull) {
+        const pad = 44;
+        const exp = hull.map(([x, y]) => { const vx = x - cx, vy = y - cy, len = Math.hypot(vx, vy) || 1; return [cx + (vx / len) * (len + pad), cy + (vy / len) * (len + pad)]; });
+        d = "M" + exp.map((p) => p.join(",")).join("L") + "Z";
+      }
+    }
+    if (!d) { const rr = Math.max(...pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy)), 0) + 54; circle = { cx, cy, r: rr }; }
+    const op = (isoTopic && isoTopic !== tk) || emph || q ? 0.04 : 0.12;
+    return { tk, d, circle, op };
+  }).filter(Boolean);
+
+  const sel = NODE_BY_ID[selected];
+  const selByPattern = {};
+  if (sel) {
+    links.filter((l) => l.type === "pattern" && (l.source === sel.id || l.target === sel.id) && revealed.has(l.source) && revealed.has(l.target) && show[l.pattern])
+      .forEach((l) => { const other = l.source === sel.id ? l.target : l.source; (selByPattern[l.pattern] = selByPattern[l.pattern] || []).push(other); });
+  }
+  const selUserLinks = sel ? links.filter((l) => l.user && (l.source === sel.id || l.target === sel.id)) : [];
+
+  const pill = (active, color) => ({ fontSize: 12.5, padding: "3px 10px", borderRadius: 999, cursor: "pointer", border: "1px solid " + (active ? color : "#2a3445"), color: active ? "#0a0f1d" : "#8a93a6", background: active ? color : "transparent", fontWeight: 500, fontFamily: "inherit" });
+
+  return (
+    <div>
+      {intro && (() => {
+        const f = CANDIDATES[featuredIdx % Math.max(1, CANDIDATES.length)];
+        if (!f) return null;
+        const fa = NODE_BY_ID[f.a], fb = NODE_BY_ID[f.b];
+        const ca = TOPICS[fa.topic].color, cb = TOPICS[fb.topic].color;
+        const because = f.fams.length ? "both run on " + f.fams.join(" and ") : (f.reasons[0] || "share hidden structure");
+        const revealAll = () => setRevealed(new Set(nodes.map((n) => n.id)));
+        return (
+          <div className="wv-rise" style={{ padding: "30px 22px 24px", textAlign: "center" }}>
+            <div className="wv-title" style={{ color: "#f0f3fa", fontSize: 38, fontWeight: 600, letterSpacing: ".06em" }}>{APP_NAME}</div>
+            <div style={{ color: "#aeb6c8", fontSize: 15.5, marginTop: 8 }}>A living map of how everything connects.</div>
+            <div style={{ color: "#7f8aa0", fontSize: 13.5, marginTop: 3 }}>Most maps show you what's known. This one shows you what isn't — yet.</div>
+            <div style={{ maxWidth: 480, margin: "24px auto 0", background: "#100a22", border: "1px solid #2a2147", borderRadius: 14, padding: "18px 20px" }}>
+              <div className="wv-title" style={{ color: HYPO, fontSize: 11.5, letterSpacing: ".18em", textTransform: "uppercase" }}>An open question</div>
+              <svg viewBox="0 0 340 96" width="100%" style={{ maxWidth: 340, marginTop: 8 }}>
+                <path className="pattern-edge" d="M86,48 Q170,18 254,48" fill="none" stroke={HYPO} strokeWidth="2.4" strokeDasharray="2 8" strokeLinecap="round" />
+                <circle cx="170" cy="29" r="10" fill="#1a1330" stroke={HYPO} strokeWidth="1.2" />
+                <text x="170" y="33" textAnchor="middle" fontSize="13" fill={HYPO} fontWeight="600">?</text>
+                <circle cx="86" cy="48" r="17" fill={ca} />
+                <circle cx="254" cy="48" r="17" fill={cb} />
+                <text x="86" y="84" textAnchor="middle" fontSize="12.5" fill="#dbe1ee">{fa.label}</text>
+                <text x="254" y="84" textAnchor="middle" fontSize="12.5" fill="#dbe1ee">{fb.label}</text>
+              </svg>
+              <div style={{ color: "#c4ccdb", fontSize: 14, lineHeight: 1.5, marginTop: 10 }}>{fa.label} and {fb.label} {because}, yet nothing connects them. Is there a real link?</div>
+              <button onClick={() => setFeaturedIdx((i) => (i + 1) % Math.min(8, CANDIDATES.length))} style={{ marginTop: 12, background: "transparent", border: "none", color: HYPO, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>next question ›</button>
+            </div>
+            <div className="row" style={{ justifyContent: "center", marginTop: 18 }}>
+              <button onClick={() => { revealAll(); setDiscover(true); setPinned(new Set([f.a + "|" + f.b])); setSelected(f.a); setHoverCand(f); setIntro(false); }} style={{ background: HYPO, color: "#1a1030", border: "none", borderRadius: 999, padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Explore this question</button>
+              <button onClick={() => { revealAll(); setDiscover(true); setIntro(false); setTimeout(fitView, 900); }} style={{ background: "transparent", color: "#cdd4e2", border: "1px solid #2a3445", borderRadius: 999, padding: "7px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>See all open questions</button>
+              <button onClick={() => setIntro(false)} style={{ background: "transparent", color: "#8a93a6", border: "1px solid #2a3445", borderRadius: 999, padding: "7px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Just explore the map</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {!intro && (<React.Fragment>
+        <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+          <div>
+            <div className="wv-title" style={{ color: "#e8ecf5", fontSize: 17, fontWeight: 600, letterSpacing: ".04em" }}>{APP_NAME}</div>
+            <div style={{ color: "#8a93a6", fontSize: 12.5 }}>Click a glowing node to grow the map · drag · scroll to zoom</div>
+          </div>
+          <div className="row">
+            <input className="wv-input" placeholder="search…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 110 }} />
+            <button onClick={() => { const nx = !discover; setDiscover(nx); if (nx) { setRevealed(new Set(nodes.map((n) => n.id))); setFocus(false); setQuery(""); setHoverCand(null); setTimeout(fitView, 900); } }} style={pill(discover, HYPO)}>discover</button>
+            <button onClick={() => setFocus((f) => !f)} style={pill(focus, "#9fb0cc")}>focus</button>
+            <button onClick={() => { const nx = !edit; setEdit(nx); if (!nx) { setLinkMode(false); setLinkFirst(null); setPendingLink(null); } }} style={pill(edit, "#8fd6b0")}>edit</button>
+            <span style={{ color: "#8a93a6", fontSize: 12.5 }}>{revealed.size}/{nodes.length}</span>
+            <button className="btn" onClick={fitView}>fit</button>
+            <button className="btn" onClick={() => setRevealed(new Set(nodes.map((n) => n.id)))}>Reveal all</button>
+            <button className="btn" onClick={() => { nodesRef.current.forEach((n) => { n.fx = null; n.fy = null; }); setRevealed(new Set([SEED])); setSelected(SEED); setView({ x: 0, y: 0, k: 1 }); setIsoTopic(null); setFocus(false); setQuery(""); }}>Reset view</button>
+          </div>
+        </div>
+
+        <div className="row" style={{ marginBottom: 8 }}>
+          <span style={{ fontSize: 12, color: "#6b7387" }}>threads:</span>
+          <button onClick={() => setShow((s) => ({ ...s, structure: !s.structure }))} style={pill(show.structure, "#7d8aa0")}>is made of</button>
+          {Object.entries(PATTERNS).map(([pk, p]) => (
+            <button key={pk} onClick={() => setShow((s) => ({ ...s, [pk]: !s[pk] }))} style={pill(show[pk], p.color)}>{p.label}</button>
+          ))}
+        </div>
+
+        {edit && (
+          <div className="row" style={{ marginBottom: 8, background: "#0c1322", border: "1px solid #1d2638", borderRadius: 10, padding: "8px 10px" }}>
+            <input className="wv-input" placeholder="new concept…" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNode()} style={{ width: 130 }} />
+            <select className="wv-select" value={newTopic} onChange={(e) => setNewTopic(e.target.value)}>
+              {Object.entries(TOPICS).map(([tk, t]) => <option key={tk} value={tk}>{t.label}</option>)}
+            </select>
+            <button className="btn" onClick={addNode}>+ add concept</button>
+            <button onClick={() => { const nx = !linkMode; setLinkMode(nx); setLinkFirst(null); }} style={pill(linkMode, "#8fd6b0")}>{linkMode ? "click two nodes…" : "connect nodes"}</button>
+            <span style={{ flex: 1 }} />
+            <button className="btn" onClick={resetMap} style={{ color: "#e0888a", borderColor: "#5a2a2c" }}>reset map</button>
+          </div>
+        )}
+
+        {pendingLink && (
+          <div className="row" style={{ marginBottom: 8, background: "#0c1322", border: "1px solid #2a2147", borderRadius: 10, padding: "8px 10px" }}>
+            <span style={{ color: "#c4ccdb", fontSize: 12.5 }}>link <b>{NODE_BY_ID[pendingLink.a].label}</b> &harr; <b>{NODE_BY_ID[pendingLink.b].label}</b> as</span>
+            <select className="wv-select" value={newRel} onChange={(e) => setNewRel(e.target.value)}>
+              <option value="structure">is made of</option>
+              {Object.keys(PATTERNS).map((pk) => <option key={pk} value={pk}>{PATTERNS[pk].label}</option>)}
+            </select>
+            <button className="btn" onClick={() => { addLink(pendingLink.a, pendingLink.b, newRel); setPendingLink(null); }} style={{ color: "#0a0f1d", background: "#8fd6b0", borderColor: "#8fd6b0" }}>add link</button>
+            <button className="btn" onClick={() => setPendingLink(null)}>cancel</button>
+          </div>
+        )}
+
+        <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} width="100%" onPointerDown={onBgDown} onWheel={onWheel}
+          style={{ background: "radial-gradient(120% 120% at 50% 26%, #131b30 0%, #080d18 74%)", borderRadius: 14, border: "1px solid #1d2638", touchAction: "none", display: "block" }}>
+          <defs>
+            <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+            <filter id="blob" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22" /></filter>
+          </defs>
+          <g transform={"translate(" + view.x + "," + view.y + ") scale(" + view.k + ")"}>
+            {territories.map((t) => (
+              <g key={"terr" + t.tk}>
+                {t.d ? <path d={t.d} fill={TOPICS[t.tk].color} opacity={t.op} filter="url(#blob)" />
+                     : <circle cx={t.circle.cx} cy={t.circle.cy} r={t.circle.r} fill={TOPICS[t.tk].color} opacity={t.op} filter="url(#blob)" />}
+              </g>
+            ))}
+            {linksRef.current.map((l) => {
+              const s = l.source, t = l.target;
+              if (!s || !t || s.x == null) return null;
+              if (!(l.type === "structure" ? show.structure : show[l.pattern])) return null;
+              let dim = 1;
+              if (q) dim = matches(NODE_BY_ID[s.id]) && matches(NODE_BY_ID[t.id]) ? 1 : 0.08;
+              else if (emph) dim = emph.has(s.id) && emph.has(t.id) ? 1 : 0.06;
+              else if (isoTopic) dim = s.topic === isoTopic && t.topic === isoTopic ? 1 : 0.1;
+              if (l.type === "structure")
+                return <line key={l._k} className="appear" x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke={STRUCT} strokeWidth={1.3} strokeOpacity={0.7 * dim} />;
+              const p = PATTERNS[l.pattern];
+              const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2, dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy) || 1;
+              const off = Math.min(70, len * 0.17), cxp = mx - (dy / len) * off, cyp = my + (dx / len) * off;
+              return <path key={l._k} className="pattern-edge appear" d={"M" + s.x + "," + s.y + " Q" + cxp + "," + cyp + " " + t.x + "," + t.y} fill="none" stroke={p.color} strokeWidth={2} strokeOpacity={0.95 * dim} strokeDasharray={p.dash} strokeLinecap="round" filter="url(#glow)" />;
+            })}
+            {(() => {
+              if (!discover) return null;
+              const posMap = Object.fromEntries(nodesRef.current.map((n) => [n.id, n]));
+              const seen = new Set(), drawn = [];
+              CANDIDATES.forEach((c) => { if (pinned.has(candKey(c))) { drawn.push(c); seen.add(candKey(c)); } });
+              if (hoverCand && !seen.has(candKey(hoverCand))) drawn.push(hoverCand);
+              return drawn.map((c) => {
+                const s = posMap[c.a], t = posMap[c.b]; if (!s || !t || s.x == null) return null;
+                const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2, dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy) || 1;
+                const off = Math.min(80, len * 0.2), cx = mx - (dy / len) * off, cy = my + (dx / len) * off;
+                const qx = 0.25 * s.x + 0.5 * cx + 0.25 * t.x, qy = 0.25 * s.y + 0.5 * cy + 0.25 * t.y;
+                return (
+                  <g key={"hypo" + candKey(c)} style={{ pointerEvents: "none" }}>
+                    <path className="pattern-edge" d={"M" + s.x + "," + s.y + " Q" + cx + "," + cy + " " + t.x + "," + t.y} fill="none" stroke={HYPO} strokeWidth={2.4} strokeOpacity={0.95} strokeDasharray="2 8" strokeLinecap="round" filter="url(#glow)" />
+                    <circle cx={qx} cy={qy} r={9} fill="#1a1330" stroke={HYPO} strokeWidth={1.2} />
+                    <text x={qx} y={qy + 4} textAnchor="middle" fontSize={12} fill={HYPO} style={{ fontWeight: 600 }}>?</text>
+                  </g>
+                );
+              });
+            })()}
+            {nodesRef.current.map((n) => {
+              if (n.x == null) return null;
+              const color = TOPICS[n.topic].color, op = nodeAlpha(n);
+              return (
+                <g key={n.id} transform={"translate(" + n.x + "," + n.y + ")"} className="node-hit appear" opacity={op} onPointerDown={(e) => onNodeDown(e, n.id)}>
+                  {isFrontier(n.id) && !q && !emph && <circle r={n.r} fill={color} className="frontier" />}
+                  {n.id === linkFirst && <circle r={n.r + 7} fill="none" stroke="#8fd6b0" strokeWidth={2} />}
+                  {n.id === selected && <circle r={n.r + 6} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.85} />}
+                  {matches(n) && <circle r={n.r + 6} fill="none" stroke="#ffffff" strokeWidth={1.5} strokeOpacity={0.8} />}
+                  <circle r={n.r} fill={color} filter="url(#glow)" />
+                  <circle r={n.r} fill={color} />
+                  {showLabel(n) && <text y={n.r + 15} textAnchor="middle" fill="#e8ecf5" fontSize={12.5} style={{ pointerEvents: "none", userSelect: "none" }}>{n.label}</text>}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+
+        <div className="row" style={{ gap: "8px 14px", marginTop: 8, fontSize: 12 }}>
+          <span style={{ color: "#6b7387" }}>topics:</span>
+          {Object.entries(TOPICS).map(([tk, t]) => (
+            <button key={tk} onClick={() => setIsoTopic((cur) => (cur === tk ? null : tk))} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: "none", cursor: "pointer", opacity: isoTopic && isoTopic !== tk ? 0.4 : 1, color: "#aeb6c8", fontFamily: "inherit", fontSize: 12 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: t.color, display: "inline-block" }} />{t.label}
+            </button>
+          ))}
+        </div>
+
+        {discover && (
+          <div style={{ marginTop: 8, background: "#100a22", border: "1px solid #2a2147", borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ color: HYPO, fontSize: 13, fontWeight: 500 }}>Candidate connections</div>
+            <div style={{ color: "#8a93a6", fontSize: 12, marginTop: 2, marginBottom: 8 }}>Proposals, not conclusions — {APP_NAME} can put two ideas in the same room; only a test decides if there's a door. Hover to preview, click to pin, add to commit.</div>
+            <div style={{ maxHeight: 240, overflowY: "auto" }}>
+              {CANDIDATES.map((c) => {
+                const a = NODE_BY_ID[c.a], b = NODE_BY_ID[c.b], isPinned = pinned.has(candKey(c));
+                return (
+                  <div key={candKey(c)} onMouseEnter={() => setHoverCand(c)} onMouseLeave={() => setHoverCand(null)} onClick={() => togglePin(c)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 8, cursor: "pointer", background: isPinned ? "#1c1440" : "transparent", border: "1px solid " + (isPinned ? HYPO : "transparent") }}>
+                    <span style={{ color: HYPO, fontSize: 12, width: 14, textAlign: "center" }}>{isPinned ? "\u25C9" : "\u25CB"}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#dbe1ee" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: TOPICS[a.topic].color, display: "inline-block" }} />{a.label}
+                      <span style={{ color: "#6b7387" }}>&harr;</span>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: TOPICS[b.topic].color, display: "inline-block" }} />{b.label}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontSize: 11.5, color: "#8a93a6", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.reasons.join("; ")}</span>
+                    <button className="btn" onClick={(e) => { e.stopPropagation(); analyze(c); }} style={{ padding: "2px 8px", color: HYPO, borderColor: "#3a2f5e" }}>{analyzing === candKey(c) ? "…" : "analyze"}</button>
+                    <button className="btn" onClick={(e) => { e.stopPropagation(); acceptCandidate(c); }} style={{ color: "#0a0f1d", background: "#8fd6b0", borderColor: "#8fd6b0", padding: "2px 8px" }}>+ add</button>
+                  </div>
+                );
+              })}
+              {CANDIDATES.length === 0 && <div style={{ color: "#6b7387", fontSize: 12.5, padding: "6px 8px" }}>No open questions — every implied bridge has been drawn.</div>}
+            </div>
+
+            {(analyzing || analysis || analysisErr) && (
+              <div style={{ marginTop: 10, borderTop: "1px solid #2a2147", paddingTop: 10 }}>
+                {analyzing && NODE_BY_ID[analyzing.split("|")[0]] && (
+                  <div style={{ color: "#aeb6c8", fontSize: 12.5 }}>Searching the literature and analyzing the gap between {NODE_BY_ID[analyzing.split("|")[0]].label} and {NODE_BY_ID[analyzing.split("|")[1]].label}…</div>
+                )}
+                {analysisErr && <div style={{ color: "#e0a06a", fontSize: 12.5 }}>{analysisErr}</div>}
+                {analysis && (() => {
+                  const [ka, kb] = analysis.key.split("|"); const na = NODE_BY_ID[ka], nb = NODE_BY_ID[kb];
+                  if (!na || !nb) return null;
+                  const cand = CANDIDATES.find((c) => candKey(c) === analysis.key);
+                  return (
+                    <div>
+                      <div style={{ color: HYPO, fontSize: 12.5, marginBottom: 4 }}>Possible connections: {na.label} &harr; {nb.label}</div>
+                      {analysis.summary && <div style={{ color: "#aeb6c8", fontSize: 12, marginBottom: 8, lineHeight: 1.45 }}>{analysis.summary}</div>}
+                      {analysis.links.map((h, i) => {
+                        const pc = h.plausibility === "established" ? { background: "#13351f", color: "#7ddc9b" } : h.plausibility === "plausible" ? { background: "#3a2a12", color: "#f2c073" } : { background: "#241a40", color: "#c9b8e8" };
+                        const nv = (h.novelty || "").toLowerCase();
+                        const isNovel = nv.indexOf("nov") === 0, isEmerging = nv.indexOf("emerg") === 0;
+                        const nc = isNovel ? { background: "#2a1545", color: "#eccaff", border: "1px solid #6a4bb0" } : isEmerging ? { background: "#33240f", color: "#f2c073", border: "1px solid #5a4012" } : { background: "#16202e", color: "#8aa0b8", border: "1px solid #25313f" };
+                        const nlabel = isNovel ? "\u2605 new idea" : isEmerging ? "emerging" : "already known";
+                        return (
+                          <div key={i} style={{ marginBottom: 8, background: "#0c0820", border: "1px solid " + (isNovel ? "#3a2a5e" : "#241a40"), borderRadius: 8, padding: "9px 11px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 13, color: "#e3e7f1", fontWeight: 500 }}>{h.hypothesis}</span>
+                              <span style={{ fontSize: 10.5, padding: "1px 8px", borderRadius: 999, ...nc }}>{nlabel}</span>
+                              <span style={{ fontSize: 10.5, padding: "1px 8px", borderRadius: 999, ...pc }}>{h.plausibility}</span>
+                            </div>
+                            {h.mechanism && <div style={{ fontSize: 12, color: "#aeb6c8", marginTop: 4, lineHeight: 1.45 }}>{h.mechanism}</div>}
+                            {h.test && <div style={{ fontSize: 11.5, color: "#7f8aa0", marginTop: 4 }}>How to check: {h.test}</div>}
+                            <button className="btn" style={{ marginTop: 7, padding: "2px 8px" }} onClick={() => addLink(ka, kb, (cand && cand.fams[0]) || "flow", h.hypothesis)}>+ add this connection</button>
+                          </div>
+                        );
+                      })}
+                      <div style={{ color: "#6b7387", fontSize: 11.5, marginTop: 2 }}>Novelty is the model's read of the literature it searched — a lead to verify, not proof of priority.</div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+
+        {sel && (
+          <div style={{ marginTop: 8, background: "#101728", border: "1px solid #1d2638", borderRadius: 10, padding: "8px 12px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <span style={{ color: TOPICS[sel.topic].color, fontSize: 13.5, fontWeight: 500 }}>{sel.label}</span>
+                <span style={{ color: "#c4ccdb", fontSize: 13.5 }}> — {sel.note}</span>
+              </div>
+              <button className="btn" onClick={() => growFrom(sel.id)} style={{ color: "#8fd6b0", borderColor: "#2f5e45", whiteSpace: "nowrap" }}>{growing ? "growing…" : "\u2726 grow"}</button>
+            </div>
+            {Object.keys(selByPattern).map((pk) => (
+              <div key={pk} style={{ color: PATTERNS[pk].color, fontSize: 12.5, marginTop: 4 }}>{PATTERNS[pk].note} Shares it with: {selByPattern[pk].map((id) => NODE_BY_ID[id].label).join(", ")}.</div>
+            ))}
+            {selUserLinks.length > 0 && (
+              <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <span style={{ color: "#8fd6b0", fontSize: 12 }}>your links:</span>
+                {selUserLinks.map((l, i) => {
+                  const other = l.source === sel.id ? l.target : l.source;
+                  return <span key={i} style={{ fontSize: 11.5, color: "#cdd4e2", border: "1px solid #2a3445", borderRadius: 999, padding: "2px 8px" }}>{NODE_BY_ID[other] ? NODE_BY_ID[other].label : other} <span onClick={() => removeLink(l)} style={{ cursor: "pointer", color: "#e0888a", marginLeft: 4 }}>×</span></span>;
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        {growList && (
+          <div style={{ marginTop: 8, background: "#0b1a14", border: "1px solid #234a39", borderRadius: 10, padding: "10px 12px" }}>
+            {growList.error ? (
+              <div style={{ color: "#e0a06a", fontSize: 12.5 }}>Couldn't reach the expansion model from here. Inside Claude this runs automatically; on your own deploy, point ANALYZE_ENDPOINT at your API proxy.</div>
+            ) : (
+              <React.Fragment>
+                <div style={{ color: "#8fd6b0", fontSize: 13, fontWeight: 500 }}>New concepts around {NODE_BY_ID[growList.seed] && NODE_BY_ID[growList.seed].label}</div>
+                <div style={{ color: "#8a93a6", fontSize: 12, marginTop: 2, marginBottom: 8 }}>AI-proposed neighbours. Uncheck any you don't want, then add them to your living map.</div>
+                {growList.items.map((it, i) => (
+                  <div key={i} onClick={() => toggleGrowItem(i)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", borderRadius: 8, cursor: "pointer", opacity: it._add ? 1 : 0.4 }}>
+                    <span style={{ color: "#8fd6b0", width: 14, textAlign: "center" }}>{it._add ? "\u2611" : "\u2610"}</span>
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: (TOPICS[it.topic] || TOPICS[NODE_BY_ID[growList.seed].topic]).color, display: "inline-block" }} />
+                    <span style={{ fontSize: 12.5, color: "#dbe1ee", fontWeight: 500 }}>{it.label}</span>
+                    <span style={{ fontSize: 11.5, color: "#8a93a6", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.note}</span>
+                    <span style={{ fontSize: 10.5, color: "#7f8aa0" }}>{it.relation}</span>
+                  </div>
+                ))}
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="btn" onClick={applyGrowth} style={{ color: "#0a0f1d", background: "#8fd6b0", borderColor: "#8fd6b0" }}>add {growList.items.filter((x) => x._add).length} to map</button>
+                  <button className="btn" onClick={() => setGrowList(null)}>cancel</button>
+                </div>
+              </React.Fragment>
+            )}
+          </div>
+        )}
+      </React.Fragment>)}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Weave />);
+</script>
+</body>
+</html>
