@@ -608,6 +608,7 @@ function Weave() {
           </div>
         )}
 
+        <div style={{ position: "relative" }}>
         <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} width="100%" onPointerDown={onBgDown} onWheel={onWheel}
           style={{ background: "radial-gradient(120% 120% at 50% 26%, #131b30 0%, #080d18 74%)", borderRadius: 14, border: "1px solid #1d2638", touchAction: "none", display: "block" }}>
           <defs>
@@ -673,6 +674,19 @@ function Weave() {
             })}
           </g>
         </svg>
+        <div style={{ position: "absolute", left: 10, bottom: 10, background: "rgba(8,12,22,0.82)", border: "1px solid #1d2638", borderRadius: 10, padding: "7px 11px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", maxWidth: "calc(100% - 20px)", pointerEvents: "none" }}>
+          <span style={{ color: "#6b7387", fontSize: 10, letterSpacing: ".14em", textTransform: "uppercase" }}>key</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#aeb6c8", fontSize: 11.5 }}>
+            <svg width="26" height="10"><line x1="1" y1="5" x2="25" y2="5" stroke={STRUCT} strokeWidth="1.7" /></svg>is made of
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#aeb6c8", fontSize: 11.5 }}>
+            <svg width="26" height="11"><path d="M1,8 Q13,1 25,8" fill="none" stroke="#43d0e0" strokeWidth="1.7" strokeDasharray="4 3" strokeLinecap="round" /></svg>same pattern <span style={{ color: "#6b7387" }}>(color = type above)</span>
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#aeb6c8", fontSize: 11.5 }}>
+            <svg width="30" height="13"><path d="M1,10 Q15,3 29,10" fill="none" stroke={HYPO} strokeWidth="1.8" strokeDasharray="2 4" strokeLinecap="round" /><circle cx="15" cy="5.5" r="4.2" fill="#1a1330" stroke={HYPO} strokeWidth="1" /><text x="15" y="8" textAnchor="middle" fontSize="7" fill={HYPO}>?</text></svg>proposed link
+          </span>
+        </div>
+        </div>
 
         <div className="row" style={{ gap: "8px 14px", marginTop: 8, fontSize: 12 }}>
           <span style={{ color: "#6b7387" }}>topics:</span>
