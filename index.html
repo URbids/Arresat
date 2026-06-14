@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Consilience — a map of how everything connects</title>
+<title>Arresat — a map of how everything connects</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500&display=swap');
   * { box-sizing: border-box; }
@@ -55,13 +55,14 @@ const PATTERNS = {
   selection: { color: "#ff6a5a", dash: "9 5",      on: false, label: "selection", note: "Variants compete; the fitter ones persist. Evolution's logic, everywhere." },
   threshold: { color: "#dfe6ff", dash: "3 6",      on: false, label: "threshold", note: "Push a system past a tipping point and it flips to a new state." },
 };
-const APP_NAME = "Consilience";
-const STORE_KEY = "consilience-graph-v1";
+const APP_NAME = "Arresat";
+const STORE_KEY = "arresat-graph-v1";
+const TOKEN_KEY = "arresat-token";
 const STRUCT = "#3f5878";
 const HYPO = "#e9c2ff";
-// Inside Claude this endpoint is auto-authed (no key needed). On your own deploy,
-// point it at a small serverless proxy that adds your Anthropic API key.
-const ANALYZE_ENDPOINT = "https://api.anthropic.com/v1/messages";
+// Your Railway backend. AI calls, accounts, and cloud map-saving all route through it.
+const API_BASE = "https://arresat-backend-production.up.railway.app";
+const ANALYZE_ENDPOINT = API_BASE + "/ai";
 
 const N = (id, label, topic, rank, r, note) => ({ id, label, topic, rank, r, note });
 const BASE_NODES = [
@@ -142,6 +143,19 @@ function loadGraph() {
   return null;
 }
 function saveGraph(g) { try { localStorage.setItem(STORE_KEY, JSON.stringify(g)); } catch (e) {} }
+function getToken() { try { return localStorage.getItem(TOKEN_KEY) || null; } catch (e) { return null; } }
+function setToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+  const tok = getToken();
+  if (tok) headers["Authorization"] = "Bearer " + tok;
+  const res = await fetch(API_BASE + path, { method: opts.method || "GET", headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error((data && data.error) || ("Request failed (" + res.status + ")"));
+  return data;
+}
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "node";
 
 function Weave() {
@@ -183,16 +197,82 @@ function Weave() {
   const [growing, setGrowing] = useState(false);
   const [growList, setGrowList] = useState(null);
 
+  const [authUser, setAuthUser] = useState(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPass, setAuthPass] = useState("");
+  const [authErr, setAuthErr] = useState(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [syncState, setSyncState] = useState("idle");
+  const saveTimer = useRef(null);
+  const skipSync = useRef(false);
+
+  // On load: if a token is stored, validate it and pull the saved map.
+  useEffect(() => {
+    if (!getToken()) return;
+    (async () => {
+      try {
+        const me = await api("/me");
+        setAuthUser({ email: me.email });
+        const m = await api("/map");
+        if (m && m.data && m.data.nodes && m.data.links) {
+          skipSync.current = true;
+          setGraph({ nodes: m.data.nodes, links: m.data.links });
+          setRevealed(new Set(m.data.revealed && m.data.revealed.length ? m.data.revealed : [SEED]));
+        }
+      } catch (e) { setToken(null); setAuthUser(null); }
+    })();
+  }, []);
+
+  // When signed in, debounce-save the map to the account on any change.
+  useEffect(() => {
+    if (!authUser) return;
+    if (skipSync.current) { skipSync.current = false; return; }
+    setSyncState("saving");
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      try { await api("/map", { method: "PUT", body: { data: { nodes: graph.nodes, links: graph.links, revealed: [...revealed] } } }); setSyncState("saved"); }
+      catch (e) { setSyncState("error"); }
+    }, 1200);
+    return () => clearTimeout(saveTimer.current);
+  }, [graph, revealed, authUser]);
+
+  const doAuth = async () => {
+    setAuthErr(null); setAuthBusy(true);
+    try {
+      const path = authMode === "signup" ? "/auth/signup" : "/auth/login";
+      const r = await api(path, { method: "POST", body: { email: authEmail, password: authPass } });
+      setToken(r.token); setAuthUser({ email: r.email }); setAuthOpen(false); setAuthPass("");
+      try {
+        const m = await api("/map");
+        if (m && m.data && m.data.nodes && m.data.links) {
+          skipSync.current = true;
+          setGraph({ nodes: m.data.nodes, links: m.data.links });
+          setRevealed(new Set(m.data.revealed && m.data.revealed.length ? m.data.revealed : [SEED]));
+        } else {
+          await api("/map", { method: "PUT", body: { data: { nodes: graph.nodes, links: graph.links, revealed: [...revealed] } } });
+        }
+      } catch (e) {}
+    } catch (e) { setAuthErr(e.message || "Something went wrong."); }
+    finally { setAuthBusy(false); }
+  };
+  const doLogout = async () => {
+    try { await api("/auth/logout", { method: "POST" }); } catch (e) {}
+    setToken(null); setAuthUser(null); setSyncState("idle");
+  };
+
   const svgRef = useRef(null), simRef = useRef(null), nodesRef = useRef([]), linksRef = useRef([]), drag = useRef(null), pan = useRef(null);
 
   useEffect(() => {
+    let pending = false;
     const sim = d3.forceSimulation([])
       .force("link", d3.forceLink([]).id((d) => d.id).distance((l) => (l.type === "pattern" ? 220 : 92)).strength((l) => (l.type === "pattern" ? 0.06 : 0.65)))
       .force("charge", d3.forceManyBody().strength(-300))
       .force("collide", d3.forceCollide().radius((d) => d.r + 22))
       .force("x", d3.forceX(W / 2).strength(0.045))
       .force("y", d3.forceY((d) => yTarget(d.rank)).strength(0.12))
-      .on("tick", () => setTick((t) => t + 1));
+      .on("tick", () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; setTick((t) => t + 1); }); });
     simRef.current = sim;
     return () => sim.stop();
   }, []);
@@ -265,8 +345,9 @@ function Weave() {
   const onBgDown = (e) => { const r = svgRef.current.getBoundingClientRect(); pan.current = { x0: e.clientX, y0: e.clientY, vx: view.x, vy: view.y, scale: W / r.width }; };
   const onWheel = (e) => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
     const p = toSim(e.clientX, e.clientY);
+    let factor = Math.pow(1.0015, -e.deltaY); // proportional to how far you scrolled — smooth on trackpads
+    factor = Math.max(0.8, Math.min(1.25, factor)); // cap each step so chunky mouse wheels don't jump
     setView((v) => { const k = Math.max(0.3, Math.min(3.5, v.k * factor)); return { k, x: v.x - p.x * (k - v.k), y: v.y - p.y * (k - v.k) }; });
   };
   const fitView = useCallback(() => {
@@ -412,6 +493,35 @@ function Weave() {
 
   return (
     <div>
+      <div style={{ position: "fixed", top: 12, right: 14, zIndex: 50 }}>
+        {authUser ? (
+          <div className="row" style={{ gap: 8, alignItems: "center", background: "rgba(13,20,38,0.8)", border: "1px solid #2a3445", borderRadius: 999, padding: "5px 8px 5px 12px" }}>
+            <span style={{ color: syncState === "error" ? "#e0a06a" : "#7fcf9e", fontSize: 10, letterSpacing: ".04em" }}>{syncState === "saving" ? "saving…" : syncState === "error" ? "offline" : "saved"}</span>
+            <span style={{ color: "#aeb6c8", fontSize: 12 }}>{authUser.email}</span>
+            <button onClick={doLogout} style={{ background: "transparent", border: "1px solid #2a3445", color: "#8a93a6", borderRadius: 999, padding: "3px 10px", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit" }}>sign out</button>
+          </div>
+        ) : (
+          <button onClick={() => { setAuthMode("login"); setAuthErr(null); setAuthOpen(true); }} style={{ background: HYPO, color: "#1a1030", border: "none", borderRadius: 999, padding: "7px 16px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Sign in to save</button>
+        )}
+      </div>
+
+      {authOpen && (
+        <div onClick={() => setAuthOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(4,6,12,0.8)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 340, maxWidth: "90vw", background: "#0c0a1c", border: "1px solid #2a2147", borderRadius: 16, padding: "26px 24px" }}>
+            <div className="wv-title" style={{ color: "#f0f3fa", fontSize: 22, fontWeight: 600, letterSpacing: ".04em" }}>{authMode === "signup" ? "Create your account" : "Welcome back"}</div>
+            <div style={{ color: "#8a93a6", fontSize: 13, marginTop: 5 }}>{authMode === "signup" ? "Save your map and continue your research from anywhere." : "Sign in to load your saved map."}</div>
+            <input className="wv-input" type="email" autoComplete="email" placeholder="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} style={{ width: "100%", marginTop: 16, padding: "9px 11px", fontSize: 13.5 }} />
+            <input className="wv-input" type="password" autoComplete={authMode === "signup" ? "new-password" : "current-password"} placeholder={authMode === "signup" ? "password (8+ characters)" : "password"} value={authPass} onChange={(e) => setAuthPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !authBusy) doAuth(); }} style={{ width: "100%", marginTop: 9, padding: "9px 11px", fontSize: 13.5 }} />
+            {authErr && <div style={{ color: "#e0a06a", fontSize: 12.5, marginTop: 10 }}>{authErr}</div>}
+            <button onClick={doAuth} disabled={authBusy} style={{ width: "100%", marginTop: 16, background: HYPO, color: "#1a1030", border: "none", borderRadius: 10, padding: "10px", fontSize: 14, fontWeight: 600, cursor: authBusy ? "default" : "pointer", opacity: authBusy ? 0.6 : 1, fontFamily: "inherit" }}>{authBusy ? "…" : authMode === "signup" ? "Create account" : "Sign in"}</button>
+            <div style={{ textAlign: "center", marginTop: 14, color: "#7f8aa0", fontSize: 12.5 }}>
+              {authMode === "signup" ? "Already have an account? " : "New here? "}
+              <button onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthErr(null); }} style={{ background: "transparent", border: "none", color: HYPO, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>{authMode === "signup" ? "Sign in" : "Create one"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {intro && (() => {
         const f = CANDIDATES[featuredIdx % Math.max(1, CANDIDATES.length)];
         if (!f) return null;
