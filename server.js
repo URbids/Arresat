@@ -1,16 +1,5 @@
 // Arresat API — accounts, per-user map storage, and the Anthropic AI proxy.
 // One dependency: pg. Everything else uses Node's built-in crypto. Needs Node 18+.
-//
-// Required environment variables:
-//   DATABASE_URL       — Postgres connection string. On Railway, add this as a
-//                        reference variable:  ${{ Postgres.DATABASE_URL }}
-//   ANTHROPIC_API_KEY  — your key from console.anthropic.com (for the /ai proxy)
-// Recommended:
-//   ALLOWED_ORIGIN     — your site origin, e.g. https://urbids.github.io
-//                        (locks the API to your page; default "*" allows any)
-// Optional:
-//   PGSSL              — "require" or "disable" to force SSL on/off (otherwise auto)
-//   SESSION_DAYS       — how long a login lasts (default 30)
 
 const http = require("http");
 const crypto = require("crypto");
@@ -21,12 +10,10 @@ const ALLOWED = process.env.ALLOWED_ORIGIN || "*";
 const PORT = process.env.PORT || 3000;
 const SESSION_DAYS = parseInt(process.env.SESSION_DAYS || "30", 10);
 
-// ---- Postgres -------------------------------------------------------------
 function sslSetting() {
   const url = process.env.DATABASE_URL || "";
   if (process.env.PGSSL === "disable") return false;
   if (process.env.PGSSL === "require") return { rejectUnauthorized: false };
-  // Railway internal networking doesn't use SSL; public/external endpoints do.
   if (url.includes("railway.internal") || url.includes("localhost") || url.includes("127.0.0.1")) return false;
   return { rejectUnauthorized: false };
 }
@@ -56,9 +43,7 @@ async function initDb() {
   `);
 }
 
-// ---- crypto helpers -------------------------------------------------------
 function hashPassword(password, salt) {
-  // scrypt: strong, memory-hard KDF built into Node. 64-byte derived key.
   return crypto.scryptSync(password, salt, 64).toString("hex");
 }
 function makeSalt() { return crypto.randomBytes(16).toString("hex"); }
@@ -70,7 +55,6 @@ function safeEqualHex(a, b) {
 function newToken() { return crypto.randomBytes(32).toString("hex"); }
 function sha256(s) { return crypto.createHash("sha256").update(s).digest("hex"); }
 
-// ---- tiny rate limiters (in-memory; reset on redeploy, fine for one instance)
 function makeLimiter(windowMs, max) {
   const hits = new Map();
   return (ip) => {
@@ -81,10 +65,9 @@ function makeLimiter(windowMs, max) {
     return arr.length > max;
   };
 }
-const aiLimit = makeLimiter(60000, 40);     // 40 AI calls / minute / IP
-const authLimit = makeLimiter(300000, 12);  // 12 auth attempts / 5 min / IP
+const aiLimit = makeLimiter(60000, 40);
+const authLimit = makeLimiter(300000, 12);
 
-// ---- http helpers ---------------------------------------------------------
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
@@ -144,7 +127,6 @@ async function createSession(userId) {
 function normEmail(e) { return String(e || "").trim().toLowerCase(); }
 function validEmail(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && e.length <= 254; }
 
-// ---- route handlers -------------------------------------------------------
 async function handleSignup(req, res) {
   const ip = clientIp(req);
   if (authLimit(ip)) return json(res, 429, { error: "Too many attempts — wait a few minutes." });
@@ -179,7 +161,7 @@ async function handleLogin(req, res) {
   const password = String(b.password || "");
   const { rows } = await pool.query(`SELECT id, pw_salt, pw_hash FROM users WHERE email = $1`, [email]);
   const fail = () => json(res, 401, { error: "Invalid email or password." });
-  if (!rows.length) { hashPassword(password || "x", "00"); return fail(); } // even out timing vs. real lookups
+  if (!rows.length) { hashPassword(password || "x", "00"); return fail(); }
   const ok = safeEqualHex(rows[0].pw_hash, hashPassword(password, rows[0].pw_salt));
   if (!ok) return fail();
   const token = await createSession(rows[0].id);
@@ -240,7 +222,6 @@ async function handleAi(req, res) {
   }
 }
 
-// ---- router ---------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin || "";
   setCors(res);
@@ -269,6 +250,5 @@ initDb()
   .then(() => server.listen(PORT, () => console.log("Arresat API listening on " + PORT)))
   .catch((e) => {
     console.error("DB init failed:", e.message);
-    // Still listen so health checks pass and you can read logs; DB routes will error until fixed.
     server.listen(PORT, () => console.log("Arresat API listening on " + PORT + " (DB init failed)"));
   });
