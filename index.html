@@ -13,7 +13,7 @@
   @keyframes pulse { 0%,100% { opacity:0; transform:scale(1);} 50% { opacity:.5; transform:scale(1.9);} }
   @keyframes appear { from { opacity:0; } to { opacity:1; } }
   @keyframes rise { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:translateY(0);} }
-  .pattern-edge { animation: flow 1.1s linear infinite; }
+  .pattern-edge { }
   .appear { animation: appear .5s ease both; }
   @media (prefers-reduced-motion: reduce){ .pattern-edge,.frontier,.appear,.wv-rise{ animation:none !important; } }
   .frontier { transform-box: fill-box; transform-origin:center; animation: pulse 2.2s ease-in-out infinite; }
