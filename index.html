@@ -263,6 +263,7 @@ function Weave() {
   };
 
   const svgRef = useRef(null), simRef = useRef(null), nodesRef = useRef([]), linksRef = useRef([]), drag = useRef(null), pan = useRef(null);
+  const viewRef = useRef(view);
 
   useEffect(() => {
     let pending = false;
@@ -343,13 +344,22 @@ function Weave() {
   }, [toSim, revealFrom, linkMode, linkFirst]);
 
   const onBgDown = (e) => { const r = svgRef.current.getBoundingClientRect(); pan.current = { x0: e.clientX, y0: e.clientY, vx: view.x, vy: view.y, scale: W / r.width }; };
-  const onWheel = (e) => {
-    e.preventDefault();
-    const p = toSim(e.clientX, e.clientY);
-    let factor = Math.pow(1.0015, -e.deltaY); // proportional to how far you scrolled — smooth on trackpads
-    factor = Math.max(0.8, Math.min(1.25, factor)); // cap each step so chunky mouse wheels don't jump
-    setView((v) => { const k = Math.max(0.3, Math.min(3.5, v.k * factor)); return { k, x: v.x - p.x * (k - v.k), y: v.y - p.y * (k - v.k) }; });
-  };
+  useEffect(() => { viewRef.current = view; }, [view]);
+  useEffect(() => {
+    const el = svgRef.current; if (!el) return;
+    const handler = (e) => {
+      e.preventDefault();
+      const svg = svgRef.current; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+      const vb = pt.matrixTransform(svg.getScreenCTM().inverse());
+      const vw = viewRef.current;
+      const p = { x: (vb.x - vw.x) / vw.k, y: (vb.y - vw.y) / vw.k };
+      let factor = Math.pow(1.0015, -e.deltaY); // proportional to how far you scrolled — smooth on trackpads
+      factor = Math.max(0.8, Math.min(1.25, factor)); // cap each step so chunky mouse wheels don't jump
+      setView((v) => { const k = Math.max(0.3, Math.min(3.5, v.k * factor)); return { k, x: v.x - p.x * (k - v.k), y: v.y - p.y * (k - v.k) }; });
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [intro]);
   const fitView = useCallback(() => {
     const ns = nodesRef.current.filter((n) => n.x != null); if (!ns.length) return;
     const xs = ns.map((n) => n.x), ys = ns.map((n) => n.y);
@@ -627,7 +637,7 @@ function Weave() {
         )}
 
         <div style={{ position: "relative" }}>
-        <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} width="100%" onPointerDown={onBgDown} onWheel={onWheel}
+        <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} width="100%" onPointerDown={onBgDown}
           style={{ background: "radial-gradient(120% 120% at 50% 26%, #131b30 0%, #080d18 74%)", borderRadius: 14, border: "1px solid #1d2638", touchAction: "none", display: "block" }}>
           <defs>
             <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
