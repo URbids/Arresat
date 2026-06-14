@@ -634,7 +634,7 @@ function Weave() {
               const p = PATTERNS[l.pattern];
               const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2, dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy) || 1;
               const off = Math.min(70, len * 0.17), cxp = mx - (dy / len) * off, cyp = my + (dx / len) * off;
-              return <path key={l._k} className="pattern-edge appear" d={"M" + s.x + "," + s.y + " Q" + cxp + "," + cyp + " " + t.x + "," + t.y} fill="none" stroke={p.color} strokeWidth={2} strokeOpacity={0.95 * dim} strokeDasharray={p.dash} strokeLinecap="round" filter="url(#glow)" />;
+              return <path key={l._k} className="pattern-edge appear" d={"M" + s.x + "," + s.y + " Q" + cxp + "," + cyp + " " + t.x + "," + t.y} fill="none" stroke={p.color} strokeWidth={1.6} strokeOpacity={0.7 * dim} strokeDasharray={p.dash} strokeLinecap="round" />;
             })}
             {(() => {
               if (!discover) return null;
@@ -649,7 +649,7 @@ function Weave() {
                 const qx = 0.25 * s.x + 0.5 * cx + 0.25 * t.x, qy = 0.25 * s.y + 0.5 * cy + 0.25 * t.y;
                 return (
                   <g key={"hypo" + candKey(c)} style={{ pointerEvents: "none" }}>
-                    <path className="pattern-edge" d={"M" + s.x + "," + s.y + " Q" + cx + "," + cy + " " + t.x + "," + t.y} fill="none" stroke={HYPO} strokeWidth={2.4} strokeOpacity={0.95} strokeDasharray="2 8" strokeLinecap="round" filter="url(#glow)" />
+                    <path className="pattern-edge" d={"M" + s.x + "," + s.y + " Q" + cx + "," + cy + " " + t.x + "," + t.y} fill="none" stroke={HYPO} strokeWidth={2.2} strokeOpacity={0.9} strokeDasharray="2 8" strokeLinecap="round" />
                     <circle cx={qx} cy={qy} r={9} fill="#1a1330" stroke={HYPO} strokeWidth={1.2} />
                     <text x={qx} y={qy + 4} textAnchor="middle" fontSize={12} fill={HYPO} style={{ fontWeight: 600 }}>?</text>
                   </g>
